@@ -24,10 +24,4 @@ npm install
 npm run dev
 ```
 
-Para publicar los cambios en GitHub Pages:
-
-```bash
-npm run deploy
-```
-
-El script compila la app y sube `dist/` a la rama `gh-pages`.
+Cada push a `main` se publica automáticamente en GitHub Pages mediante `.github/workflows/deploy.yml`.
