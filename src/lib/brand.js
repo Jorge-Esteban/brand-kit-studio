@@ -180,16 +180,3 @@ export function slugify(s) {
       .replace(/^-+|-+$/g, '') || 'item'
   );
 }
-
-// Indica qué secciones tienen contenido (para los puntos del menú).
-export function completion(brand) {
-  return {
-    identity: !!brand.identity.name && !!(brand.identity.tagline || brand.identity.description),
-    voice: brand.voice.traits.length > 0 || !!brand.voice.tone,
-    colors: brand.colors.length > 0,
-    typography: !!brand.fonts.heading.family,
-    style: !!brand.style.preset,
-    logos: brand.logos.length > 0,
-    imagery: !!(brand.imagery.photo || brand.imagery.illustration || brand.imagery.icons),
-  };
-}

@@ -1,146 +1,178 @@
 import { useEffect, useRef, useState } from 'react';
 import { useBrandStore, safeGet, safeSet } from './lib/store.js';
-import { completion } from './lib/brand.js';
 import { getSettings, saveSettings } from './lib/claude.js';
 import { loadBrandFonts } from './lib/fontLoader.js';
 import { readFile } from './lib/svg.js';
-import { useToast, Modal } from './components/ui.jsx';
-import IdentitySection from './components/IdentitySection.jsx';
-import VoiceSection from './components/VoiceSection.jsx';
+import { useToast, Modal, Menu, MenuItem } from './components/ui.jsx';
+import BrandSection from './components/BrandSection.jsx';
 import ColorsSection from './components/ColorsSection.jsx';
 import TypographySection from './components/TypographySection.jsx';
 import StyleSection from './components/StyleSection.jsx';
 import LogosSection from './components/LogosSection.jsx';
-import ImagerySection from './components/ImagerySection.jsx';
-import PreviewSection from './components/PreviewSection.jsx';
 import ExportSection from './components/ExportSection.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
+import BrandPreview from './components/BrandPreview.jsx';
 
-const SECTIONS = [
-  { id: 'identity', label: 'Identidad', icon: '◎', C: IdentitySection },
-  { id: 'voice', label: 'Voz y tono', icon: '❝', C: VoiceSection },
-  { id: 'colors', label: 'Colores', icon: '◑', C: ColorsSection },
-  { id: 'typography', label: 'Tipografía', icon: 'Aa', C: TypographySection },
-  { id: 'style', label: 'Estilo', icon: '▣', C: StyleSection },
-  { id: 'logos', label: 'Logos', icon: '✦', C: LogosSection },
-  { id: 'imagery', label: 'Imagen e iconos', icon: '◫', C: ImagerySection },
-  { id: 'preview', label: 'Vista previa', icon: '◉', C: PreviewSection },
-  { id: 'export', label: 'Exportar', icon: '⇪', C: ExportSection },
+const STEPS = [
+  { id: 'brand', label: 'Marca', C: BrandSection },
+  { id: 'colors', label: 'Colores', C: ColorsSection },
+  { id: 'typography', label: 'Tipografía', C: TypographySection },
+  { id: 'style', label: 'Estilo', C: StyleSection },
+  { id: 'logos', label: 'Logo', C: LogosSection },
+  { id: 'export', label: 'Exportar', C: ExportSection },
 ];
 
+function PreviewToggle({ dark, setDark }) {
+  return (
+    <div className="seg small">
+      <button className={!dark ? 'on' : ''} onClick={() => setDark(false)}>
+        Claro
+      </button>
+      <button className={dark ? 'on' : ''} onClick={() => setDark(true)}>
+        Oscuro
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
-  const store = useBrandStore();
-  const { brands, active: brand, setActiveId, update, patch, create, duplicate, remove, importBrand, saveError } = store;
+  const { brands, active: brand, setActiveId, update, patch, create, duplicate, remove, importBrand, saveError } = useBrandStore();
   const toast = useToast();
-  const [section, setSection] = useState(() => safeGet('bks:section') || 'identity');
+  const [step, setStep] = useState(() => {
+    const saved = safeGet('bks:step');
+    return STEPS.some((s) => s.id === saved) ? saved : 'brand';
+  });
   const [settings, setSettings] = useState(getSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [dark, setDark] = useState(false);
   const importRef = useRef(null);
-  const mainRef = useRef(null);
+  const editorRef = useRef(null);
 
   useEffect(() => {
-    safeSet('bks:section', section);
-    mainRef.current?.scrollTo?.({ top: 0 });
-  }, [section]);
+    safeSet('bks:step', step);
+    editorRef.current?.scrollTo?.({ top: 0 });
+  }, [step]);
 
   useEffect(() => {
     loadBrandFonts(brand.fonts);
   }, [brand.fonts]);
 
   useEffect(() => {
-    document.title = `${brand.identity.name || 'Marca'} · Brand Kit Studio`;
+    document.title = `${brand.identity.name || 'Marca'} · Brand Kit`;
   }, [brand.identity.name]);
 
-  const done = completion(brand);
-  const Current = (SECTIONS.find((s) => s.id === section) || SECTIONS[0]).C;
+  const index = STEPS.findIndex((s) => s.id === step);
+  const Current = STEPS[index].C;
+  const next = STEPS[index + 1];
 
   const onImport = async (file) => {
     if (!file) return;
     try {
-      const data = JSON.parse(await readFile(file));
-      const b = importBrand(data);
+      const b = importBrand(JSON.parse(await readFile(file)));
       toast(`«${b.identity.name}» importada`);
     } catch {
-      toast('El archivo no es un brand.json válido', 'error');
+      toast('Ese archivo no es un brand.json válido', 'error');
     }
   };
 
   return (
     <div className="app">
       <header className="topbar">
-        <div className="app-logo">
-          <span className="app-mark" aria-hidden="true" />
-          <span>Brand Kit Studio</span>
+        <div className="wordmark">
+          Brand<em>Kit</em>
         </div>
-        <div className="brand-switch">
-          <select value={brand.id} onChange={(e) => setActiveId(e.target.value)} aria-label="Marca activa">
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.identity.name || 'Sin nombre'}
-              </option>
-            ))}
-          </select>
-          <button className="btn xs" onClick={() => create()} title="Nueva marca">
-            + Nueva
-          </button>
-          <button className="btn xs" onClick={duplicate} title="Duplicar marca">
-            Duplicar
-          </button>
-          <button className="btn xs" onClick={() => importRef.current?.click()} title="Importar brand.json">
-            Importar
-          </button>
-          <button className="btn xs ghost danger" onClick={() => setConfirmDelete(true)} title="Eliminar marca">
+
+        <Menu
+          className="brand-menu"
+          trigger={({ toggle, open }) => (
+            <button className={`brand-trigger ${open ? 'open' : ''}`} onClick={toggle}>
+              <span className="brand-dots">
+                {brand.colors.slice(0, 3).map((c) => (
+                  <span key={c.id} style={{ background: c.hex }} />
+                ))}
+              </span>
+              <span className="ellipsis">{brand.identity.name || 'Sin nombre'}</span>
+              <span className="chev">▾</span>
+            </button>
+          )}
+        >
+          <div className="menu-label">Tus marcas</div>
+          {brands.map((b) => (
+            <MenuItem key={b.id} active={b.id === brand.id} onClick={() => setActiveId(b.id)}>
+              {b.identity.name || 'Sin nombre'}
+            </MenuItem>
+          ))}
+          <div className="menu-sep" />
+          <MenuItem onClick={() => (create(), setStep('brand'))}>Nueva marca</MenuItem>
+          <MenuItem onClick={duplicate}>Duplicar</MenuItem>
+          <MenuItem onClick={() => importRef.current?.click()}>Importar brand.json</MenuItem>
+          <MenuItem danger onClick={() => setConfirmDelete(true)}>
             Eliminar
-          </button>
-          <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={(e) => (onImport(e.target.files[0]), (e.target.value = ''))} />
-        </div>
-        <button className={`btn xs ${settings.apiKey ? '' : 'attention'}`} onClick={() => setShowSettings(true)}>
-          ⚙ {settings.apiKey ? 'Claude conectado' : 'Conectar Claude'}
+          </MenuItem>
+        </Menu>
+        <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={(e) => (onImport(e.target.files[0]), (e.target.value = ''))} />
+
+        <nav className="steps" aria-label="Pasos">
+          {STEPS.map((s, i) => (
+            <button key={s.id} className={`step ${step === s.id ? 'on' : ''}`} onClick={() => setStep(s.id)}>
+              <span className="step-num">{i + 1}</span>
+              <span className="step-label">{s.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <button className={`connect ${settings.apiKey ? 'on' : ''}`} onClick={() => setShowSettings(true)} title={settings.apiKey ? 'Claude conectado' : 'Conectar Claude'}>
+          <span className="connect-dot" />
+          {settings.apiKey ? 'Claude conectado' : 'Conectar Claude'}
         </button>
       </header>
 
-      <div className="layout">
-        <nav className="sidenav" aria-label="Secciones">
-          {SECTIONS.map((s) => (
-            <button key={s.id} className={`nav-item ${section === s.id ? 'on' : ''}`} onClick={() => setSection(s.id)}>
-              <span className="nav-icon">{s.icon}</span>
-              <span className="nav-label">{s.label}</span>
-              {done[s.id] !== undefined && <span className={`nav-dot ${done[s.id] ? 'done' : ''}`} aria-label={done[s.id] ? 'completado' : 'pendiente'} />}
-            </button>
-          ))}
-          <div className="nav-palette" aria-hidden="true">
-            {brand.colors.slice(0, 12).map((c) => (
-              <span key={c.id} style={{ background: c.hex }} title={`${c.name} ${c.hex}`} />
-            ))}
-          </div>
-        </nav>
-
-        <main className="main" ref={mainRef}>
-          {saveError && <div className="callout error">{saveError}</div>}
-          <Current
-            key={`${brand.id}-${section}`}
-            brand={brand}
-            update={update}
-            patch={patch}
-            settings={settings}
-            openSettings={() => setShowSettings(true)}
-          />
-          <div className="section-nav">
-            {SECTIONS.findIndex((s) => s.id === section) > 0 && (
-              <button className="btn" onClick={() => setSection(SECTIONS[SECTIONS.findIndex((s) => s.id === section) - 1].id)}>
-                ← Anterior
-              </button>
-            )}
-            <span className="grow" />
-            {SECTIONS.findIndex((s) => s.id === section) < SECTIONS.length - 1 && (
-              <button className="btn primary" onClick={() => setSection(SECTIONS[SECTIONS.findIndex((s) => s.id === section) + 1].id)}>
-                Siguiente: {SECTIONS[SECTIONS.findIndex((s) => s.id === section) + 1].label} →
-              </button>
-            )}
+      <div className="workspace">
+        <main className="editor" ref={editorRef}>
+          <div className="editor-inner">
+            {saveError && <div className="notice error">{saveError}</div>}
+            <Current key={`${brand.id}-${step}`} brand={brand} update={update} patch={patch} settings={settings} openSettings={() => setShowSettings(true)} />
+            <div className="step-nav">
+              {index > 0 && (
+                <button className="btn ghost" onClick={() => setStep(STEPS[index - 1].id)}>
+                  ← {STEPS[index - 1].label}
+                </button>
+              )}
+              <span className="grow" />
+              {next && (
+                <button className="btn dark" onClick={() => setStep(next.id)}>
+                  Siguiente: {next.label} →
+                </button>
+              )}
+            </div>
           </div>
         </main>
+
+        <aside className="preview-pane" aria-label="Vista previa">
+          <div className="preview-head">
+            <span className="eyebrow">Vista previa en vivo</span>
+            <PreviewToggle dark={dark} setDark={setDark} />
+          </div>
+          <div className="preview-frame">
+            <BrandPreview brand={brand} dark={dark} />
+          </div>
+        </aside>
       </div>
+
+      <button className="preview-fab" onClick={() => setShowPreview(true)}>
+        Ver vista previa
+      </button>
+
+      {showPreview && (
+        <Modal title="Vista previa" wide onClose={() => setShowPreview(false)}>
+          <PreviewToggle dark={dark} setDark={setDark} />
+          <div className="preview-frame">
+            <BrandPreview brand={brand} dark={dark} />
+          </div>
+        </Modal>
+      )}
 
       {showSettings && (
         <SettingsModal
@@ -150,7 +182,7 @@ export default function App() {
             saveSettings(s);
             setSettings(getSettings());
             setShowSettings(false);
-            toast(s.apiKey ? 'Ajustes guardados' : 'API key eliminada');
+            toast(s.apiKey ? 'Claude conectado' : 'Claude desconectado');
           }}
         />
       )}
@@ -170,7 +202,6 @@ export default function App() {
                 onClick={() => {
                   remove();
                   setConfirmDelete(false);
-                  toast('Marca eliminada');
                 }}
               >
                 Eliminar
@@ -178,9 +209,7 @@ export default function App() {
             </>
           }
         >
-          <p>
-            ¿Eliminar «{brand.identity.name || 'Sin nombre'}» de este navegador? No se puede deshacer. Si quieres conservarla, exporta antes su <code>brand.json</code>.
-          </p>
+          <p>¿Eliminar «{brand.identity.name || 'Sin nombre'}» de este navegador? No se puede deshacer. Si quieres conservarla, descarga antes su JSON en Exportar.</p>
         </Modal>
       )}
     </div>
